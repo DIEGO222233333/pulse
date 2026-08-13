@@ -277,7 +277,8 @@
         <div class="l">Cours en direct (Finnhub)</div>
         <input id="fhInput" type="password" placeholder="Colle ta clé API Finnhub…" autocomplete="off">
         <button id="fhSave">Activer le live</button>
-        <button id="fhClear" class="ghost">Désactiver</button>
+        <button id="fhClear" class="ghost">Mettre en pause (garde la clé)</button>
+        <button id="fhForget" class="ghost" style="font-size:11px;padding:7px">Supprimer la clé de cet appareil</button>
         <p>Clé gratuite sur <b>finnhub.io</b>. Quand l'app est ouverte, les cours US arrivent en <b>temps réel</b> (flux transaction par transaction, comme Google Finance). La clé reste stockée sur cet appareil uniquement.</p>
         <p id="fhStatus" style="margin-top:8px;font-weight:600"></p>
       </div>
@@ -589,6 +590,7 @@ const FH_REV = {}; Object.entries(FH_MAP).forEach(([k,v])=>FH_REV[v]=k);
 function fhKey(){
   return localStorage.getItem("finnhubKey") || window.FINNHUB_KEY || "";
 }
+function liveEnabled(){ return !localStorage.getItem("liveOff"); }
 function renderUpdated(){
   const label = wsAlive ? "Temps réel" : (liveOk ? "Live" : "");
   document.getElementById("updated").innerHTML =
@@ -608,7 +610,7 @@ function updHist(q, price){   // reporte le prix du jour sur la courbe
 let snapshotAt = 0;
 async function liveTick(){
   const key = fhKey();
-  if(!key || document.hidden) return;
+  if(!key || !liveEnabled() || document.hidden) return;
   if(Date.now()-snapshotAt < 65000) return;   // l'instantané vient de tout recaler : on épargne le quota
   if(!liveOrder.length)
     liveOrder = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t]);
@@ -635,7 +637,7 @@ async function liveTick(){
 
 /* instantané éclair à l'ouverture : recale ~55 valeurs d'un coup en 1-2 s */
 async function snapshot(){
-  const key = fhKey(); if(!key) return;
+  const key = fhKey(); if(!key || !liveEnabled()) return;
   snapshotAt = Date.now();
   const prio = [...new Set(visiblePicks().map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t]);
   const rest = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!prio.includes(t) && !FH_SKIP.has(t) && Q[t]);
@@ -714,7 +716,7 @@ function wsResub(){
 }
 function wsConnect(){
   const key = fhKey();
-  if(!key || ws || wsStopped) return;
+  if(!key || !liveEnabled() || ws || wsStopped) return;
   try{ ws = new WebSocket("wss://ws.finnhub.io?token="+encodeURIComponent(key)); }
   catch(e){ ws = null; return; }
   ws.onopen = ()=>{ wsAlive = true; wsSubs.clear(); wsResub(); renderUpdated(); };
@@ -762,6 +764,7 @@ if(bc){
 const pop = document.getElementById("pop");
 function fhStatusText(){
   if(!fhKey()) return ["Aucune clé : flux inactif.", "var(--txt3)"];
+  if(!liveEnabled()) return ["Live en pause — la clé est conservée sur cet appareil.", "var(--txt2)"];
   if(wsStopped) return ["Flux cédé à un onglet plus récent — recharge cette page pour le reprendre.", "var(--down)"];
   if(wsAlive && Date.now()-lastTrade < 30000) return [`● Temps réel actif · ${wsSubs.size} valeurs suivies`, "var(--up)"];
   if(wsAlive) return [`Connecté (${wsSubs.size} valeurs) · en attente de transactions — marché fermé ?`, "var(--txt2)"];
@@ -777,15 +780,23 @@ document.getElementById("gearBtn").addEventListener("click",e=>{
 document.addEventListener("click",e=>{ if(!pop.contains(e.target) && e.target.id!=="gearBtn") pop.classList.remove("show"); });
 document.getElementById("fhSave").addEventListener("click",()=>{
   const v = document.getElementById("fhInput").value.trim();
-  if(v){
-    localStorage.setItem("finnhubKey", v); liveOk=false;
+  if(v) localStorage.setItem("finnhubKey", v);
+  if(v || fhKey()){
+    localStorage.removeItem("liveOff");        // réactive le live avec la clé en place
+    liveOk=false; wsStopped=false;
     try{ ws && ws.close(); }catch(e){}
-    liveTick(); wsConnect();
+    snapshot(); wsConnect();
   }
   pop.classList.remove("show"); renderUpdated();
 });
 document.getElementById("fhClear").addEventListener("click",()=>{
-  localStorage.removeItem("finnhubKey"); liveOk=false;
+  localStorage.setItem("liveOff","1");         // pause : la clé reste enregistrée
+  liveOk=false;
+  try{ ws && ws.close(); }catch(e){}
+  pop.classList.remove("show"); renderUpdated();
+});
+document.getElementById("fhForget").addEventListener("click",()=>{
+  localStorage.removeItem("finnhubKey"); localStorage.removeItem("liveOff"); liveOk=false;
   try{ ws && ws.close(); }catch(e){}
   pop.classList.remove("show"); renderUpdated();
 });
