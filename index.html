@@ -596,12 +596,26 @@ function renderUpdated(){
     `Données Yahoo Finance<br>maj <b>${DATA.generatedAt}</b>`;
 }
 
+function updHist(q, price){   // reporte le prix du jour sur la courbe
+  const today = new Date().toISOString().slice(0,10);
+  const h = q.history;
+  if(h && h.dates.length){
+    if(h.dates[h.dates.length-1] === today) h.closes[h.closes.length-1] = price;
+    else { h.dates.push(today); h.closes.push(price); }
+  }
+}
+
+let snapshotAt = 0;
 async function liveTick(){
   const key = fhKey();
   if(!key || document.hidden) return;
+  if(Date.now()-snapshotAt < 65000) return;   // l'instantané vient de tout recaler : on épargne le quota
   if(!liveOrder.length)
     liveOrder = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t]);
-  const t = liveOrder[liveIdx % liveOrder.length];
+  // quand le flux temps réel tourne, ne sonder que les valeurs qu'il ne couvre pas
+  const pool = wsAlive ? liveOrder.filter(t=>!wsSubs.has(FH_MAP[t]||t)) : liveOrder;
+  if(!pool.length) return;
+  const t = pool[liveIdx % pool.length];
   liveIdx++;
   try{
     const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(FH_MAP[t]||t)}&token=${key}`);
@@ -613,15 +627,41 @@ async function liveTick(){
     const changed = q.price !== j.c;
     q.price = j.c;
     if(j.pc) q.prevClose = j.pc;
-    const today = new Date().toISOString().slice(0,10);
-    const h = q.history;
-    if(h && h.dates.length){
-      if(h.dates[h.dates.length-1] === today) h.closes[h.closes.length-1] = j.c;
-      else { h.dates.push(today); h.closes.push(j.c); }
-    }
+    updHist(q, j.c);
     if(changed) patchTicker(t);
-    if(liveIdx % liveOrder.length === 0) renderStats();   // stats globales à chaque tour complet
+    if(liveIdx % pool.length === 0) renderStats();   // stats globales à chaque tour complet
   }catch(e){ /* réseau : on retentera au tick suivant */ }
+}
+
+/* instantané éclair à l'ouverture : recale ~55 valeurs d'un coup en 1-2 s */
+async function snapshot(){
+  const key = fhKey(); if(!key) return;
+  snapshotAt = Date.now();
+  const prio = [...new Set(visiblePicks().map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t]);
+  const rest = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!prio.includes(t) && !FH_SKIP.has(t) && Q[t]);
+  const list = [...prio, ...rest].slice(0, 55);   // ≤55 requêtes : sous la limite de 60/min
+  await Promise.all(list.map(async t=>{
+    try{
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(FH_MAP[t]||t)}&token=${key}`);
+      if(!r.ok) return;
+      const j = await r.json();
+      if(j && j.c){ const q = Q[t]; q.price = j.c; if(j.pc) q.prevClose = j.pc; updHist(q, j.c); }
+    }catch(e){}
+  }));
+  liveOk = true;
+  renderUpdated(); renderStats(); renderGrid();
+  saveLastPrices(true);
+}
+
+/* mémorise les derniers prix connus pour un réaffichage instantané à la prochaine ouverture */
+let lastSave = 0;
+function saveLastPrices(force){
+  const now = Date.now();
+  if(!force && now-lastSave < 5000) return;
+  lastSave = now;
+  const p = {};
+  Object.entries(Q).forEach(([t,q])=>{ if(q.price!=null) p[t] = q.price; });
+  try{ localStorage.setItem("pulseLastPrices", JSON.stringify({t:now, p})); }catch(e){}
 }
 
 function patchTicker(t){
@@ -689,12 +729,7 @@ function wsConnect(){
       const q = Q[t];
       if(!q || !price || q.price===price) return;
       q.price = price;
-      const today = new Date().toISOString().slice(0,10);
-      const h = q.history;
-      if(h && h.dates.length){
-        if(h.dates[h.dates.length-1]===today) h.closes[h.closes.length-1] = price;
-        else { h.dates.push(today); h.closes.push(price); }
-      }
+      updHist(q, price);
       wsPending[t] = true;   // affichage groupé au prochain battement (1 s)
     });
   };
@@ -707,6 +742,7 @@ setInterval(()=>{
   if(!tickers.length) return;
   wsPending = {};
   tickers.forEach(patchTicker);
+  saveLastPrices();
 }, 1000);
 setInterval(()=>{ if(wsAlive) renderStats(); }, 10000);   // tuiles de synthèse toutes les 10 s
 
@@ -775,10 +811,18 @@ document.addEventListener("visibilitychange", ()=>{
 });
 
 /* ─── Init ─── */
+/* 1) réafficher immédiatement les derniers prix connus (si plus frais que les données de fond) */
+try{
+  const saved = JSON.parse(localStorage.getItem("pulseLastPrices")||"null");
+  const baseTs = new Date(DATA.generatedAt.replace(" ","T")).getTime() || 0;
+  if(saved && saved.t > baseTs)
+    Object.entries(saved.p).forEach(([t,px])=>{ const q=Q[t]; if(q){ q.price = px; updHist(q, px); } });
+}catch(e){}
 renderUpdated();
 renderStats();
 renderGrid();
-liveTick();
+/* 2) instantané éclair : tout le tableau recalé en 1-2 s, puis le flux temps réel prend le relais */
+snapshot();
 wsConnect();
 </script>
 </body>
