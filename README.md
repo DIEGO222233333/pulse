@@ -1,7 +1,7 @@
-# KPITALIST — Suivi des recommandations
+# PULSE — Suivi des recommandations
 
 Dashboard de suivi des actions recommandées par les portefeuilles **Alpha Pick**,
-**Stock Advisor** et **Value Line** (source : `KPITALIST LISTE .xlsx`).
+**Stock Advisor** et **Value Line** (source : Excel de recommandations, hors dépôt).
 
 ## Utilisation
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-KPITALIST — collecte des données boursières (gratuit, via Yahoo Finance / yfinance).
+PULSE — collecte des données boursières (gratuit, via Yahoo Finance / yfinance).
 
 Pour chaque recommandation : cours actuel, historique depuis la date du pick,
 PER (trailing + forward), volumes, capitalisation, secteur, 52 semaines.
@@ -18,7 +18,7 @@ import yfinance as yf
 HERE = Path(__file__).parent
 OUT = HERE / "data" / "stocks.js"
 
-# ─── Les 72 recommandations (source : KPITALIST LISTE .xlsx) ────────────────
+# ─── Les 72 recommandations (source : Excel de recommandations) ────────────────
 # (ticker(s) candidats, nom affiché, date du pick, portefeuille)
 # Tickers vérifiés/corrigés : DeVry→ATGE (Adtalem), Embraer→ERJ, StoneX→SNEX,
 # Qnity→Q, Moog→MOG-A, Berkshire→BRK-B, Stantec→STN (NYSE), Prysmian→PRY.MI,
@@ -293,7 +293,7 @@ def main():
         "failed": failed,
     }
     OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text("window.KPITALIST_DATA = " + json.dumps(payload, ensure_ascii=False) + ";\n", encoding="utf-8")
+    OUT.write_text("window.PULSE_DATA = " + json.dumps(payload, ensure_ascii=False) + ";\n", encoding="utf-8")
     kb = OUT.stat().st_size / 1024
     print(f"\n→ {OUT} écrit ({kb:.0f} Ko) — {len(quotes)} tickers, {len(failed)} échec(s): {failed}")
 

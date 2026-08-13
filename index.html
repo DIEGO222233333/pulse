@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>KPITALIST — Suivi des recommandations</title>
+<title>PULSE — Suivi des recommandations</title>
 <style>
   :root{
     --bg:#08090c;
@@ -267,7 +267,7 @@
 
 <div class="wrap">
   <header>
-    <div class="logo"><h1>KPITALIST</h1><span>Suivi des recommandations</span></div>
+    <div class="logo"><h1>PULSE</h1><span>Suivi des recommandations</span></div>
     <div class="hright">
       <div class="updated" id="updated"></div>
       <button class="gear" id="gearBtn" title="Réglages du mode live">⚙︎</button>
@@ -314,7 +314,7 @@
 <script src="data/live_config.js" onerror="/* absent sur GitHub Pages : clé via le panneau ⚙︎ */"></script>
 <script>
 "use strict";
-const DATA = window.KPITALIST_DATA || {picks:[],quotes:{},generatedAt:"?"};
+const DATA = window.PULSE_DATA || {picks:[],quotes:{},generatedAt:"?"};
 const Q = DATA.quotes;
 const PF_CLASS = {"ALPHA PICK":"p-ap","STOCK ADVISOR":"p-sa","VALUE LINE":"p-vl"};
 const PF_SHORT = {"ALPHA PICK":"Alpha Pick","STOCK ADVISOR":"Stock Advisor","VALUE LINE":"Value Line"};
