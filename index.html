@@ -582,6 +582,7 @@ const FH_MAP = {"BRK-B":"BRK.B","MOG-A":"MOG.A"};          // notation Finnhub
 const FH_SKIP = new Set(["PRY.MI","ATZ.TO"]);              // hors US : pas couvert en gratuit
 let liveIdx = 0, liveOrder = [], liveOk = false;
 let ws = null, wsAlive = false, wsSubs = new Set(), wsStopped = false, lastTrade = 0;
+let wsPending = {};   // valeurs modifiées depuis le dernier battement d'affichage
 const lastFlash = {}, lastPaint = {};
 const FH_REV = {}; Object.entries(FH_MAP).forEach(([k,v])=>FH_REV[v]=k);
 
@@ -639,7 +640,7 @@ function patchTicker(t){
     const s = seriesSince(p), old = card.querySelector(".spark");
     if(s && old) old.outerHTML = sparkSVG(s, (perf??0)>=0);
     const now = Date.now();
-    if(!lastFlash[t] || now-lastFlash[t] > 4000){   // flash max toutes les 4 s par carte
+    if(!lastFlash[t] || now-lastFlash[t] > 2000){   // flash max toutes les 2 s par carte
       lastFlash[t] = now;
       card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
     }
@@ -694,14 +695,20 @@ function wsConnect(){
         if(h.dates[h.dates.length-1]===today) h.closes[h.closes.length-1] = price;
         else { h.dates.push(today); h.closes.push(price); }
       }
-      const now = Date.now();                              // repeint au plus 1×/700 ms par valeur
-      if(!lastPaint[t] || now-lastPaint[t] > 700){ lastPaint[t] = now; patchTicker(t); }
+      wsPending[t] = true;   // affichage groupé au prochain battement (1 s)
     });
   };
   ws.onclose = ()=>{ ws = null; wsAlive = false; wsSubs.clear(); renderUpdated(); if(!wsStopped) setTimeout(wsConnect, 3000); };
   ws.onerror = ()=>{ try{ ws && ws.close(); }catch(e){} };
 }
-setInterval(()=>{ if(wsAlive) renderStats(); }, 15000);   // tuiles de synthèse recalculées toutes les 15 s
+/* battement d'affichage : toutes les valeurs modifiées sont repeintes ensemble, 1×/seconde */
+setInterval(()=>{
+  const tickers = Object.keys(wsPending);
+  if(!tickers.length) return;
+  wsPending = {};
+  tickers.forEach(patchTicker);
+}, 1000);
+setInterval(()=>{ if(wsAlive) renderStats(); }, 10000);   // tuiles de synthèse toutes les 10 s
 
 /* une seule connexion temps réel possible (plan gratuit) : le dernier onglet ouvert prend la main */
 const bc = ("BroadcastChannel" in window) ? new BroadcastChannel("pulse-live") : null;
