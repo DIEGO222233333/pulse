@@ -279,6 +279,7 @@
         <button id="fhSave">Activer le live</button>
         <button id="fhClear" class="ghost">Désactiver</button>
         <p>Clé gratuite sur <b>finnhub.io</b>. Quand l'app est ouverte, les cours US arrivent en <b>temps réel</b> (flux transaction par transaction, comme Google Finance). La clé reste stockée sur cet appareil uniquement.</p>
+        <p id="fhStatus" style="margin-top:8px;font-weight:600"></p>
       </div>
     </div>
   </header>
@@ -580,7 +581,7 @@ document.getElementById("sort").addEventListener("change",e=>{ state.sort=e.targ
 const FH_MAP = {"BRK-B":"BRK.B","MOG-A":"MOG.A"};          // notation Finnhub
 const FH_SKIP = new Set(["PRY.MI","ATZ.TO"]);              // hors US : pas couvert en gratuit
 let liveIdx = 0, liveOrder = [], liveOk = false;
-let ws = null, wsAlive = false, wsSubs = new Set();
+let ws = null, wsAlive = false, wsSubs = new Set(), wsStopped = false, lastTrade = 0;
 const lastFlash = {}, lastPaint = {};
 const FH_REV = {}; Object.entries(FH_MAP).forEach(([k,v])=>FH_REV[v]=k);
 
@@ -672,13 +673,14 @@ function wsResub(){
 }
 function wsConnect(){
   const key = fhKey();
-  if(!key || ws) return;
+  if(!key || ws || wsStopped) return;
   try{ ws = new WebSocket("wss://ws.finnhub.io?token="+encodeURIComponent(key)); }
   catch(e){ ws = null; return; }
   ws.onopen = ()=>{ wsAlive = true; wsSubs.clear(); wsResub(); renderUpdated(); };
   ws.onmessage = ev=>{
     let msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
     if(msg.type!=="trade" || !msg.data) return;
+    lastTrade = Date.now();
     const seen = {};
     msg.data.forEach(tr=>{ seen[tr.s] = tr.p; });          // dernier prix par symbole du lot
     Object.entries(seen).forEach(([sym,price])=>{
@@ -696,16 +698,38 @@ function wsConnect(){
       if(!lastPaint[t] || now-lastPaint[t] > 700){ lastPaint[t] = now; patchTicker(t); }
     });
   };
-  ws.onclose = ()=>{ ws = null; wsAlive = false; wsSubs.clear(); renderUpdated(); setTimeout(wsConnect, 5000); };
+  ws.onclose = ()=>{ ws = null; wsAlive = false; wsSubs.clear(); renderUpdated(); if(!wsStopped) setTimeout(wsConnect, 3000); };
   ws.onerror = ()=>{ try{ ws && ws.close(); }catch(e){} };
 }
 setInterval(()=>{ if(wsAlive) renderStats(); }, 15000);   // tuiles de synthèse recalculées toutes les 15 s
 
+/* une seule connexion temps réel possible (plan gratuit) : le dernier onglet ouvert prend la main */
+const bc = ("BroadcastChannel" in window) ? new BroadcastChannel("pulse-live") : null;
+if(bc){
+  bc.postMessage("claim");
+  bc.onmessage = e=>{
+    if(e.data==="claim"){          // un onglet plus récent réclame le flux : on le lui cède
+      wsStopped = true;
+      try{ ws && ws.close(); }catch(err){}
+    }
+  };
+}
+
 /* panneau réglages */
 const pop = document.getElementById("pop");
+function fhStatusText(){
+  if(!fhKey()) return ["Aucune clé : flux inactif.", "var(--txt3)"];
+  if(wsStopped) return ["Flux cédé à un onglet plus récent — recharge cette page pour le reprendre.", "var(--down)"];
+  if(wsAlive && Date.now()-lastTrade < 30000) return [`● Temps réel actif · ${wsSubs.size} valeurs suivies`, "var(--up)"];
+  if(wsAlive) return [`Connecté (${wsSubs.size} valeurs) · en attente de transactions — marché fermé ?`, "var(--txt2)"];
+  return ["Connexion au flux en cours… (une seule connexion possible : ferme les autres onglets PULSE)", "var(--down)"];
+}
 document.getElementById("gearBtn").addEventListener("click",e=>{
   e.stopPropagation(); pop.classList.toggle("show");
   document.getElementById("fhInput").value = localStorage.getItem("finnhubKey")||"";
+  const [txt,col] = fhStatusText();
+  const st = document.getElementById("fhStatus");
+  st.textContent = txt; st.style.color = col;
 });
 document.addEventListener("click",e=>{ if(!pop.contains(e.target) && e.target.id!=="gearBtn") pop.classList.remove("show"); });
 document.getElementById("fhSave").addEventListener("click",()=>{
