@@ -1,0 +1,40 @@
+name: Rafraîchissement des données
+
+on:
+  schedule:
+    # toutes les 30 min pendant les heures de Wall Street (13h-21h UTC, lun-ven)
+    - cron: "*/30 13-20 * * 1-5"
+    # un passage complet chaque matin (fondamentaux, PER, historiques)
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install yfinance
+
+      - name: Collecter les données
+        run: python fetch_stocks.py
+
+      - name: Committer si changement
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/stocks.js
+          git diff --cached --quiet || git commit -m "chore(data): rafraîchissement auto [skip ci]"
+          git push
