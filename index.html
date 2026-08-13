@@ -278,7 +278,7 @@
         <input id="fhInput" type="password" placeholder="Colle ta clé API Finnhub…" autocomplete="off">
         <button id="fhSave">Activer le live</button>
         <button id="fhClear" class="ghost">Désactiver</button>
-        <p>Clé gratuite sur <b>finnhub.io</b>. Quand l'app est ouverte, les cours US se rafraîchissent en continu (tour complet ≈ 1 min). La clé reste stockée sur cet appareil uniquement.</p>
+        <p>Clé gratuite sur <b>finnhub.io</b>. Quand l'app est ouverte, les cours US arrivent en <b>temps réel</b> (flux transaction par transaction, comme Google Finance). La clé reste stockée sur cet appareil uniquement.</p>
       </div>
     </div>
   </header>
@@ -440,6 +440,7 @@ function renderGrid(){
     </div>`;
   }).join("");
   grid.querySelectorAll(".card").forEach(c=>c.addEventListener("click",()=>openDetail(+c.dataset.id)));
+  if(typeof wsResub === "function") wsResub();   // réaligner les abonnements temps réel sur le filtre
 }
 
 /* ─── Détail ─── */
@@ -579,14 +580,17 @@ document.getElementById("sort").addEventListener("change",e=>{ state.sort=e.targ
 const FH_MAP = {"BRK-B":"BRK.B","MOG-A":"MOG.A"};          // notation Finnhub
 const FH_SKIP = new Set(["PRY.MI","ATZ.TO"]);              // hors US : pas couvert en gratuit
 let liveIdx = 0, liveOrder = [], liveOk = false;
+let ws = null, wsAlive = false, wsSubs = new Set();
+const lastFlash = {}, lastPaint = {};
+const FH_REV = {}; Object.entries(FH_MAP).forEach(([k,v])=>FH_REV[v]=k);
 
 function fhKey(){
   return localStorage.getItem("finnhubKey") || window.FINNHUB_KEY || "";
 }
 function renderUpdated(){
-  const live = fhKey() && liveOk;
+  const label = wsAlive ? "Temps réel" : (liveOk ? "Live" : "");
   document.getElementById("updated").innerHTML =
-    (live ? `<span class="live-dot"></span><b>Live</b> · ` : ``) +
+    (fhKey() && label ? `<span class="live-dot"></span><b>${label}</b> · ` : ``) +
     `Données Yahoo Finance<br>maj <b>${DATA.generatedAt}</b>`;
 }
 
@@ -633,7 +637,11 @@ function patchTicker(t){
     pEl.textContent = fmtPct(perf);
     const s = seriesSince(p), old = card.querySelector(".spark");
     if(s && old) old.outerHTML = sparkSVG(s, (perf??0)>=0);
-    card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
+    const now = Date.now();
+    if(!lastFlash[t] || now-lastFlash[t] > 4000){   // flash max toutes les 4 s par carte
+      lastFlash[t] = now;
+      card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash");
+    }
   });
   // fiche ouverte sur ce titre → maj des chiffres (sans redessiner la courbe sous la souris)
   if(overlay.classList.contains("show") && sheet.dataset.ticker===t){
@@ -650,6 +658,49 @@ function patchTicker(t){
 }
 setInterval(liveTick, 1100);   // ≈55 req/min, sous la limite gratuite de 60
 
+/* ─── Flux temps réel (WebSocket Finnhub : chaque transaction, à la seconde) ─── */
+function wsSymbols(){
+  // les valeurs affichées d'abord, limité à 50 abonnements (plafond du plan gratuit)
+  const vis = visiblePicks().map(p=>p.ticker).filter(t=>!FH_SKIP.has(t) && Q[t]);
+  return [...new Set(vis)].slice(0,50).map(t=>FH_MAP[t]||t);
+}
+function wsResub(){
+  if(!ws || ws.readyState!==1) return;
+  const want = new Set(wsSymbols());
+  [...wsSubs].forEach(s=>{ if(!want.has(s)){ ws.send(JSON.stringify({type:"unsubscribe",symbol:s})); wsSubs.delete(s); } });
+  want.forEach(s=>{ if(!wsSubs.has(s)){ ws.send(JSON.stringify({type:"subscribe",symbol:s})); wsSubs.add(s); } });
+}
+function wsConnect(){
+  const key = fhKey();
+  if(!key || ws) return;
+  try{ ws = new WebSocket("wss://ws.finnhub.io?token="+encodeURIComponent(key)); }
+  catch(e){ ws = null; return; }
+  ws.onopen = ()=>{ wsAlive = true; wsSubs.clear(); wsResub(); renderUpdated(); };
+  ws.onmessage = ev=>{
+    let msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
+    if(msg.type!=="trade" || !msg.data) return;
+    const seen = {};
+    msg.data.forEach(tr=>{ seen[tr.s] = tr.p; });          // dernier prix par symbole du lot
+    Object.entries(seen).forEach(([sym,price])=>{
+      const t = FH_REV[sym] || sym;
+      const q = Q[t];
+      if(!q || !price || q.price===price) return;
+      q.price = price;
+      const today = new Date().toISOString().slice(0,10);
+      const h = q.history;
+      if(h && h.dates.length){
+        if(h.dates[h.dates.length-1]===today) h.closes[h.closes.length-1] = price;
+        else { h.dates.push(today); h.closes.push(price); }
+      }
+      const now = Date.now();                              // repeint au plus 1×/700 ms par valeur
+      if(!lastPaint[t] || now-lastPaint[t] > 700){ lastPaint[t] = now; patchTicker(t); }
+    });
+  };
+  ws.onclose = ()=>{ ws = null; wsAlive = false; wsSubs.clear(); renderUpdated(); setTimeout(wsConnect, 5000); };
+  ws.onerror = ()=>{ try{ ws && ws.close(); }catch(e){} };
+}
+setInterval(()=>{ if(wsAlive) renderStats(); }, 15000);   // tuiles de synthèse recalculées toutes les 15 s
+
 /* panneau réglages */
 const pop = document.getElementById("pop");
 document.getElementById("gearBtn").addEventListener("click",e=>{
@@ -659,11 +710,16 @@ document.getElementById("gearBtn").addEventListener("click",e=>{
 document.addEventListener("click",e=>{ if(!pop.contains(e.target) && e.target.id!=="gearBtn") pop.classList.remove("show"); });
 document.getElementById("fhSave").addEventListener("click",()=>{
   const v = document.getElementById("fhInput").value.trim();
-  if(v){ localStorage.setItem("finnhubKey", v); liveOk=false; liveTick(); }
+  if(v){
+    localStorage.setItem("finnhubKey", v); liveOk=false;
+    try{ ws && ws.close(); }catch(e){}
+    liveTick(); wsConnect();
+  }
   pop.classList.remove("show"); renderUpdated();
 });
 document.getElementById("fhClear").addEventListener("click",()=>{
   localStorage.removeItem("finnhubKey"); liveOk=false;
+  try{ ws && ws.close(); }catch(e){}
   pop.classList.remove("show"); renderUpdated();
 });
 
@@ -672,6 +728,7 @@ renderUpdated();
 renderStats();
 renderGrid();
 liveTick();
+wsConnect();
 </script>
 </body>
 </html>
