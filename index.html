@@ -754,6 +754,26 @@ document.getElementById("fhClear").addEventListener("click",()=>{
   pop.classList.remove("show"); renderUpdated();
 });
 
+/* ─── Recharge automatique des données de base (utile sans clé : téléphone, autre ordi) ─── */
+async function refreshBaseline(){
+  if(wsAlive) return;                      // le flux temps réel prime sur la photo statique
+  try{
+    const r = await fetch("data/stocks.js?ts="+Date.now(), {cache:"no-store"});
+    if(!r.ok) return;
+    const txt = await r.text();
+    const j = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}")+1));
+    if(!j || !j.generatedAt || j.generatedAt === DATA.generatedAt) return;
+    DATA.generatedAt = j.generatedAt;
+    DATA.picks = j.picks;
+    Object.assign(Q, j.quotes);
+    renderUpdated(); renderStats(); renderGrid();
+  }catch(e){ /* hors ligne ou file:// : on retentera */ }
+}
+setInterval(refreshBaseline, 5*60*1000);
+document.addEventListener("visibilitychange", ()=>{
+  if(!document.hidden){ refreshBaseline(); if(!ws) wsConnect(); }
+});
+
 /* ─── Init ─── */
 renderUpdated();
 renderStats();
