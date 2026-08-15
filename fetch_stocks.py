@@ -96,7 +96,30 @@ PICKS = [
     (["Q", "QNTY"], "Qnity Electronics", "2026-06-21", "STOCK ADVISOR"),
     (["STRL"], "Sterling Infrastructure", "2026-07-04", "STOCK ADVISOR"),
     (["ICHR"], "Ichor Holdings", "2026-07-04", "ALPHA PICK"),
+    (["MELI"], "MercadoLibre", "2025-03-23", "VALUE LINE"),
+    (["TXRH"], "Texas Roadhouse", "2025-04-20", "VALUE LINE"),
+    (["MS"], "Morgan Stanley", "2025-05-18", "VALUE LINE"),
+    (["ANET"], "Arista Networks", "2025-05-27", "VALUE LINE"),
+    (["OPCH"], "Option Care Health", "2025-06-15", "VALUE LINE"),
+    (["VRT"], "Vertiv Holdings", "2025-08-17", "VALUE LINE"),
+    (["HII"], "Huntington Ingalls", "2025-09-21", "VALUE LINE"),
+    (["VEEV"], "Veeva Systems", "2025-10-19", "VALUE LINE"),
+    (["ETN"], "Eaton", "2025-11-16", "VALUE LINE"),
+    (["RGLD"], "Royal Gold", "2026-01-25", "VALUE LINE"),
+    (["IOT"], "Samsara", "2026-07-18", "STOCK ADVISOR"),
+    (["BTSG"], "BrightSpring Health", "2026-07-18", "ALPHA PICK"),
+    (["AZN"], "AstraZeneca", "2026-07-18", "VALUE LINE"),
+    (["META"], "Meta Platforms", "2026-08-02", "VALUE LINE"),
+    (["MSFT"], "Microsoft", "2026-08-06", "VALUE LINE"),
+    (["CSCO"], "Cisco Systems", "2026-08-09", "STOCK ADVISOR"),
+    (["CNC"], "Centene", "2026-08-09", "ALPHA PICK"),
 ]
+
+# ─── Archivage : seuls les 50 tickers US les plus récemment recommandés restent
+# « actifs » (couverture temps réel complète, limite du plan gratuit Finnhub).
+# Les picks plus anciens sont marqués archivés : consultables via l'onglet Archives.
+US_ACTIVE_LIMIT = 50
+NON_US = {"PRY.MI", "ATZ.TO"}
 
 # ─── Descriptions d'activité en français (rédigées à la main) ───────────────
 DESC_FR = {
@@ -172,6 +195,23 @@ DESC_FR = {
     "SNEX": "Groupe de services financiers (ex-INTL FCStone) : courtage, compensation et couverture sur matières premières et devises.",
     "Q": "Spin-off électronique de DuPont : matériaux et consommables pour la fabrication de semi-conducteurs.",
     "ICHR": "Fournisseur de systèmes de distribution de fluides et de gaz pour les équipementiers de semi-conducteurs.",
+    "MELI": "« L'Amazon latino-américain » : e-commerce n°1 d'Amérique latine et fintech Mercado Pago.",
+    "TXRH": "Chaîne américaine de steakhouses conviviaux (Texas Roadhouse, Bubba's 33), environ 800 restaurants.",
+    "MS": "Grande banque d'investissement américaine : gestion de patrimoine, marchés et conseil aux entreprises.",
+    "ANET": "Équipementier réseaux pour data centers et IA : commutateurs très haut débit, grand rival de Cisco.",
+    "OPCH": "Premier fournisseur américain de soins par perfusion à domicile et en centre de soins.",
+    "VRT": "Infrastructures critiques des data centers : alimentation électrique et refroidissement, porté par l'IA.",
+    "HII": "Premier constructeur naval militaire des États-Unis : porte-avions et sous-marins de l'US Navy.",
+    "VEEV": "Éditeur de logiciels cloud de référence pour l'industrie pharmaceutique et les sciences de la vie.",
+    "ETN": "Groupe de gestion de l'énergie : équipements électriques pour data centers, réseaux et industrie.",
+    "RGLD": "Société de royalties aurifères : perçoit un pourcentage de la production de mines d'or sans les exploiter.",
+    "IOT": "Plateforme cloud IoT de Samsara pour les opérations physiques : flottes, caméras embarquées, sécurité.",
+    "BTSG": "Services de santé à domicile et pharmacie spécialisée pour patients complexes aux États-Unis.",
+    "AZN": "Géant pharmaceutique anglo-suédois : oncologie, maladies rares, cardiovasculaire et respiratoire.",
+    "META": "Maison mère de Facebook, Instagram et WhatsApp : publicité numérique, IA et réalité virtuelle.",
+    "MSFT": "Numéro un mondial du logiciel : Windows, Office, cloud Azure et IA (Copilot, partenariat OpenAI).",
+    "CSCO": "Leader mondial des équipements réseaux d'entreprise, de la cybersécurité et de la collaboration.",
+    "CNC": "Grand assureur santé américain, spécialiste des programmes publics Medicaid et Medicare.",
 }
 
 MAX_POINTS = 160  # points max par courbe (downsampling)
@@ -263,6 +303,13 @@ def main():
         print(f"  ✓ {used:8s} {name:32s} {price}")
         time.sleep(0.35)
 
+    # tickers actifs = les 50 US les plus récemment recommandés (+ hors-US)
+    latest = {}
+    for cands, _, date, _ in PICKS:
+        latest[cands[0]] = max(latest.get(cands[0], date), date)
+    us_sorted = sorted([t for t in latest if t not in NON_US], key=lambda t: latest[t], reverse=True)
+    active = set(us_sorted[:US_ACTIVE_LIMIT]) | NON_US
+
     picks_out = []
     for i, (cands, name, date, portfolio) in enumerate(PICKS):
         primary = cands[0]
@@ -280,6 +327,7 @@ def main():
             "date": date,
             "portfolio": portfolio,
             "priceAtPick": price_at_pick,
+            "archived": primary not in active,
         })
 
     for q in quotes.values():

@@ -293,6 +293,7 @@
       <button data-pf="ALPHA PICK" class="c-ap">Alpha Pick</button>
       <button data-pf="STOCK ADVISOR" class="c-sa">Stock Advisor</button>
       <button data-pf="VALUE LINE" class="c-vl">Value Line</button>
+      <button data-pf="ARCHIVE">Archives</button>
     </div>
     <div class="search">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#fff" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
@@ -376,14 +377,16 @@ function sparkSVG(s, positive, W=300, H=56){
 
 /* ─── Stats globales ─── */
 function renderStats(){
-  const perfs = DATA.picks.map(p=>({p,v:perfOf(p)})).filter(x=>x.v!=null);
+  const act = DATA.picks.filter(p=>!p.archived);
+  const nArch = DATA.picks.length - act.length;
+  const perfs = act.map(p=>({p,v:perfOf(p)})).filter(x=>x.v!=null);
   const avg = perfs.reduce((a,x)=>a+x.v,0)/(perfs.length||1);
   const winners = perfs.filter(x=>x.v>0).length;
   const best = perfs.slice().sort((a,b)=>b.v-a.v)[0];
   const el = document.getElementById("stats");
   el.innerHTML = `
-    <div class="stat"><div class="lbl">Recommandations</div><div class="val">${DATA.picks.length}</div>
-      <div class="sub">depuis ${fmtDate(DATA.picks.reduce((a,p)=>p.date<a?p.date:a,DATA.picks[0].date))}</div></div>
+    <div class="stat"><div class="lbl">Recommandations</div><div class="val">${act.length}</div>
+      <div class="sub">${nArch ? "actives · +"+nArch+" archivées" : "depuis "+fmtDate(act.reduce((a,p)=>p.date<a?p.date:a,act[0].date))}</div></div>
     <div class="stat"><div class="lbl">Perf. moyenne</div><div class="val ${avg>=0?'up':'down'}">${fmtPct(avg)}</div>
       <div class="sub">depuis chaque reco</div></div>
     <div class="stat"><div class="lbl">Taux de réussite</div><div class="val">${Math.round(winners/perfs.length*100)} %</div>
@@ -396,8 +399,13 @@ function renderStats(){
 let state = {pf:"ALL", q:"", sort:"perf-desc"};
 
 function visiblePicks(){
-  let list = DATA.picks.slice();
-  if(state.pf!=="ALL") list = list.filter(p=>p.portfolio===state.pf);
+  let list;
+  if(state.pf==="ARCHIVE"){
+    list = DATA.picks.filter(p=>p.archived);          // les anciennes recos, toujours consultables
+  }else{
+    list = DATA.picks.filter(p=>!p.archived);
+    if(state.pf!=="ALL") list = list.filter(p=>p.portfolio===state.pf);
+  }
   if(state.q){
     const s = state.q.toLowerCase();
     list = list.filter(p=> p.name.toLowerCase().includes(s) || p.ticker.toLowerCase().includes(s)
@@ -438,7 +446,7 @@ function renderGrid(){
         </div>
         <div class="perf ${(perf??0)>=0?'up':'down'}">${fmtPct(perf)}</div>
       </div>
-      <div class="since">Reco le ${fmtDate(p.date)} · ${p.priceAtPick?fmtPrice(p.priceAtPick)+" "+curSym(q?.currency)+" au pick":""}</div>
+      <div class="since">Reco le ${fmtDate(p.date)} · ${p.priceAtPick?fmtPrice(p.priceAtPick)+" "+curSym(q?.currency)+" au pick":""}${p.archived?" · 🗄 Archivée":""}</div>
     </div>`;
   }).join("");
   grid.querySelectorAll(".card").forEach(c=>c.addEventListener("click",()=>openDetail(+c.dataset.id)));
