@@ -251,6 +251,33 @@
   .card.flash{animation:flash 1s ease-out}
   @keyframes flash{0%{border-color:rgba(48,209,88,.55);box-shadow:0 0 22px -4px rgba(48,209,88,.35)}100%{border-color:var(--stroke)}}
 
+  /* ─── Dossier d'analyse ─── */
+  .ovlink{
+    margin:-12px 0 22px;padding:13px 20px;border-radius:var(--r-sm);cursor:pointer;
+    background:var(--card);border:1px solid var(--stroke);font-size:13.5px;font-weight:600;color:var(--txt2);
+    backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);transition:all .2s;
+  }
+  .ovlink:hover{background:var(--card-hover);color:#fff}
+  .fchips{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 2px}
+  .fchip{
+    font-size:11px;font-weight:650;padding:5px 11px;border-radius:100px;
+    color:#ffb0a8;background:rgba(255,69,58,.09);border:1px solid rgba(255,69,58,.25);
+  }
+  .fchip.neutral{color:var(--txt2);background:rgba(255,255,255,.06);border-color:var(--stroke)}
+  .corrline{font-size:12.5px;color:var(--txt2);margin-top:12px}
+  .corrline b{color:var(--txt)}
+  .ana-note{font-size:11px;color:var(--txt3);margin-top:14px;line-height:1.5}
+  .ovsec{margin-top:20px}
+  .ovsec .l{font-size:10.5px;color:var(--txt3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px}
+  .ovrow{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:13px}
+  .ovrow .nm{width:230px;flex:none;color:var(--txt2)}
+  .ovrow .bar{height:8px;border-radius:4px;background:linear-gradient(90deg,rgba(10,132,255,.7),rgba(191,90,242,.55));min-width:2px}
+  .ovrow .n{color:var(--txt3);font-size:12px;font-variant-numeric:tabular-nums}
+  .ovblock{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:13px 15px;margin:9px 0}
+  .ovblock .t{display:flex;justify-content:space-between;font-size:13.5px;font-weight:650;margin-bottom:5px}
+  .ovblock .t span:last-child{color:var(--sa)}
+  .ovblock .mem{font-size:11.5px;color:var(--txt3);line-height:1.6}
+
   @media(max-width:820px){
     .stats{grid-template-columns:repeat(2,1fr)}
     .stat .val{font-size:24px}
@@ -286,6 +313,7 @@
   </header>
 
   <section class="stats" id="stats"></section>
+  <div class="ovlink" id="ovlink" style="display:none">📊 Vue d'ensemble de la liste — secteurs, corrélations, profils de risque</div>
 
   <div class="controls">
     <div class="seg" id="seg">
@@ -316,6 +344,7 @@
 <div class="overlay" id="overlay"><div class="sheet" id="sheet"></div></div>
 
 <script src="data/stocks.js"></script>
+<script src="data/analysis.js" onerror="/* dossier d'analyse pas encore généré */"></script>
 <script src="data/live_config.js" onerror="/* absent sur GitHub Pages : clé via le panneau ⚙︎ */"></script>
 <script>
 "use strict";
@@ -459,6 +488,74 @@ function renderGrid(){
 /* ─── Détail ─── */
 const overlay = document.getElementById("overlay"), sheet = document.getElementById("sheet");
 
+/* ─── Dossier d'analyse factuelle ─── */
+const ANA = window.PULSE_ANALYSIS || null;
+const fmtX = (v,d=1)=> v==null ? "—" : Number(v).toFixed(d).replace(".",",");
+function analysisHTML(t, q){
+  const a = ANA && ANA.byTicker && ANA.byTicker[t]; if(!a) return "";
+  const cur = curSym(q.currency);
+  const pctS = v => v==null ? "—" : (v>0?"+":"")+String(v).replace(".",",")+" %";
+  const gPct = v => v==null ? "—" : (v>0?"+":"")+(v*100).toFixed(1).replace(".",",")+" %";
+  const upTarget = (a.target && q.price) ? (a.target/q.price-1)*100 : null;
+  const mom = a.mom || {};
+  return `
+  <div class="desc">
+    <div class="l">Analyse factuelle</div>
+    <div class="m-stats">
+      <div class="ms"><div class="l">PER vs secteur</div><div class="v">${fmtX(a.pe)}</div><div class="s">médiane du secteur : ${fmtX(a.sectorPeMed)}</div></div>
+      <div class="ms"><div class="l">Croissance CA</div><div class="v">${gPct(a.revGrowth)}</div><div class="s">sur un an</div></div>
+      <div class="ms"><div class="l">Croissance BPA</div><div class="v">${gPct(a.epsGrowth)}</div><div class="s">sur un an</div></div>
+      <div class="ms"><div class="l">Marge nette</div><div class="v">${gPct(a.margin)}</div><div class="s">ROE ${gPct(a.roe)}</div></div>
+      <div class="ms"><div class="l">Dette nette</div><div class="v">${a.ndEbitda==null?"—":fmtX(a.ndEbitda)+"×"}</div><div class="s">vs EBITDA</div></div>
+      <div class="ms"><div class="l">Objectif analystes</div><div class="v">${a.target?fmtPrice(a.target)+" "+cur:"—"}</div>
+        <div class="s">${a.target?`${fmtPrice(a.targetLow)}–${fmtPrice(a.targetHigh)} · ${a.nAnalysts||"?"} analystes${upTarget!=null?` · ${fmtPct(upTarget)} vs cours`:""}`:"non couvert"}</div></div>
+      <div class="ms"><div class="l">Momentum 6 mois</div><div class="v">${pctS(mom.m6)}</div><div class="s">3 m ${pctS(mom.m3)} · 12 m ${pctS(mom.m12)}</div></div>
+      <div class="ms"><div class="l">Volatilité</div><div class="v">${a.volDaily==null?"—":fmtX(a.volDaily)+" %/j"}</div><div class="s">bêta ${fmtX(a.beta)}</div></div>
+      <div class="ms"><div class="l">Liquidité</div><div class="v">${a.dollarVolM==null?"—":a.dollarVolM>=1000?fmtX(a.dollarVolM/1000,1)+" Md$":fmtX(a.dollarVolM,0)+" M$"}</div><div class="s">échangés par jour</div></div>
+      <div class="ms"><div class="l">Prochains résultats</div><div class="v" style="font-size:14.5px">${a.earningsDate?fmtDate(a.earningsDate):"—"}</div><div class="s">séance à fort mouvement possible</div></div>
+    </div>
+    ${a.flags && a.flags.length ? `<div class="fchips">${a.flags.map(f=>`<span class="fchip">${f}</span>`).join("")}</div>` : ""}
+    ${a.topCorr && a.topCorr.length ? `<div class="corrline">Bouge avec : ${a.topCorr.map(([o,v])=>`<b>${o}</b> ${String(v).replace(".",",")}`).join(" · ")} <span style="color:var(--txt3)">(corrélation sur 1 an — 1 = parfaitement ensemble)</span></div>` : ""}
+    <div class="ana-note">Données Yahoo Finance · maj ${ANA.generatedAt}. Les « objectifs » sont le consensus publié par les analystes — une donnée, pas une recommandation.</div>
+  </div>`;
+}
+
+function openOverview(){
+  if(!ANA) return;
+  const by = ANA.byTicker;
+  const sectors = {};
+  Object.values(by).forEach(a=>{ const s = a.sector || "Autre"; sectors[s] = (sectors[s]||0)+1; });
+  const rows = Object.entries(sectors).sort((a,b)=>b[1]-a[1]);
+  const max = rows.length ? rows[0][1] : 1;
+  const flagCount = {};
+  Object.values(by).forEach(a=>(a.flags||[]).forEach(f=>{ const k = f.split(" (")[0]; flagCount[k] = (flagCount[k]||0)+1; }));
+  sheet.className = "sheet";
+  sheet.dataset.ticker = ""; sheet.dataset.pickId = "";
+  sheet.innerHTML = `
+    <button class="close" id="mclose">✕</button>
+    <div class="m-head"><div>
+      <div class="tkr" style="color:var(--sa)">DOSSIER FACTUEL</div>
+      <div class="cname">Vue d'ensemble de la liste</div>
+      <div class="m-sector">${Object.keys(by).length} valeurs analysées · maj ${ANA.generatedAt}</div>
+    </div></div>
+    <div class="ovsec"><div class="l">Répartition sectorielle</div>
+      ${rows.map(([s,n])=>`<div class="ovrow"><div class="nm">${s}</div><div class="bar" style="width:${Math.round(n/max*300)}px"></div><div class="n">${n}</div></div>`).join("")}
+    </div>
+    <div class="ovsec"><div class="l">Blocs corrélés — ces valeurs montent et baissent ensemble</div>
+      ${ANA.blocks.map(b=>`<div class="ovblock">
+        <div class="t"><span>${b.name} (${b.members.length})</span><span>${b.avgCorr!=null?"corr. moyenne "+String(b.avgCorr).replace(".",","):""}</span></div>
+        <div class="mem">${b.members.join(" · ")}</div></div>`).join("")}
+      <div class="ana-note">Corrélation calculée sur 1 an de cotations : 1 = les valeurs bougent parfaitement ensemble, 0 = indépendantes. Répartir son attention entre valeurs d'un même bloc diversifie moins qu'il n'y paraît.</div>
+    </div>
+    <div class="ovsec"><div class="l">Profils de risque — drapeaux factuels</div>
+      <div class="fchips">${Object.entries(flagCount).sort((a,b)=>b[1]-a[1]).map(([f,n])=>`<span class="fchip neutral">${f} : ${n} valeur${n>1?"s":""}</span>`).join("")||"<span class='fchip neutral'>aucun</span>"}</div>
+    </div>
+    <div class="ana-note">${ANA.note}</div>`;
+  overlay.classList.add("show");
+  document.body.style.overflow = "hidden";
+  document.getElementById("mclose").addEventListener("click", closeDetail);
+}
+
 function bigChart(s, pickPrice, cur){
   const W=700, H=250, P={t:14,r:10,b:26,l:46};
   const min0=Math.min(...s.c, pickPrice||Infinity), max0=Math.max(...s.c, pickPrice||-Infinity);
@@ -543,6 +640,7 @@ function openDetail(id){
       <p>${q.descFr||"Description indisponible."}</p>
       ${q.descEn?`<details><summary>Description complète (EN)</summary><p>${q.descEn}…</p></details>`:""}
     </div>
+    ${analysisHTML(p.ticker, q)}
     <div class="m-links">
       <a class="primary" href="${gLink}" target="_blank" rel="noopener">Google Finance ↗</a>
       ${q.website?`<a href="${q.website}" target="_blank" rel="noopener">Site officiel ↗</a>`:""}
@@ -831,6 +929,9 @@ setInterval(refreshBaseline, 5*60*1000);
 document.addEventListener("visibilitychange", ()=>{
   if(!document.hidden){ refreshBaseline(); if(!ws) wsConnect(); }
 });
+
+document.getElementById("ovlink").addEventListener("click", openOverview);
+if(ANA) document.getElementById("ovlink").style.display = "block";
 
 /* ─── Init ─── */
 /* 1) réafficher immédiatement les derniers prix connus (si plus frais que les données de fond) */

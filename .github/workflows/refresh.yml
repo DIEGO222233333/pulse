@@ -26,15 +26,19 @@ jobs:
           python-version: "3.12"
 
       - name: Installer les dépendances
-        run: pip install yfinance
+        run: pip install yfinance pandas
 
       - name: Collecter les données
         run: python fetch_stocks.py
+
+      - name: Dossier d'analyse (passage quotidien uniquement)
+        if: github.event.schedule == '0 6 * * *' || github.event_name == 'workflow_dispatch'
+        run: python fetch_analysis.py
 
       - name: Committer si changement
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/stocks.js
+          git add data/stocks.js data/analysis.js
           git diff --cached --quiet || git commit -m "chore(data): rafraîchissement auto [skip ci]"
           git push
