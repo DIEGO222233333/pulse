@@ -379,16 +379,19 @@ function sparkSVG(s, positive, W=300, H=56){
 function renderStats(){
   const act = DATA.picks.filter(p=>!p.archived);
   const nArch = DATA.picks.length - act.length;
-  const perfs = act.map(p=>({p,v:perfOf(p)})).filter(x=>x.v!=null);
+  // les statistiques couvrent TOUTES les recos depuis le début (archives comprises),
+  // sinon la performance globale serait faussée
+  const perfs = DATA.picks.map(p=>({p,v:perfOf(p)})).filter(x=>x.v!=null);
   const avg = perfs.reduce((a,x)=>a+x.v,0)/(perfs.length||1);
   const winners = perfs.filter(x=>x.v>0).length;
   const best = perfs.slice().sort((a,b)=>b.v-a.v)[0];
+  const first = DATA.picks.reduce((a,p)=>p.date<a?p.date:a, DATA.picks[0].date);
   const el = document.getElementById("stats");
   el.innerHTML = `
-    <div class="stat"><div class="lbl">Recommandations</div><div class="val">${act.length}</div>
-      <div class="sub">${nArch ? "actives · +"+nArch+" archivées" : "depuis "+fmtDate(act.reduce((a,p)=>p.date<a?p.date:a,act[0].date))}</div></div>
+    <div class="stat"><div class="lbl">Recommandations</div><div class="val">${DATA.picks.length}</div>
+      <div class="sub">${act.length} actives · ${nArch} archivées · depuis ${fmtDate(first)}</div></div>
     <div class="stat"><div class="lbl">Perf. moyenne</div><div class="val ${avg>=0?'up':'down'}">${fmtPct(avg)}</div>
-      <div class="sub">depuis chaque reco</div></div>
+      <div class="sub">toutes recos depuis l'origine</div></div>
     <div class="stat"><div class="lbl">Taux de réussite</div><div class="val">${Math.round(winners/perfs.length*100)} %</div>
       <div class="sub">${winners} gagnantes / ${perfs.length}</div></div>
     <div class="stat"><div class="lbl">Meilleur pick</div><div class="val up">${best?fmtPct(best.v):"—"}</div>
