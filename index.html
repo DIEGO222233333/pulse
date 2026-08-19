@@ -252,12 +252,29 @@
   @keyframes flash{0%{border-color:rgba(48,209,88,.55);box-shadow:0 0 22px -4px rgba(48,209,88,.35)}100%{border-color:var(--stroke)}}
 
   /* ─── Dossier d'analyse ─── */
+  .linkrow{display:flex;gap:12px;flex-wrap:wrap;margin:-12px 0 22px}
   .ovlink{
-    margin:-12px 0 22px;padding:13px 20px;border-radius:var(--r-sm);cursor:pointer;
+    flex:1;min-width:260px;padding:13px 20px;border-radius:var(--r-sm);cursor:pointer;
     background:var(--card);border:1px solid var(--stroke);font-size:13.5px;font-weight:600;color:var(--txt2);
     backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);transition:all .2s;
   }
   .ovlink:hover{background:var(--card-hover);color:#fff}
+  /* tableau des performances récentes */
+  .ptable-wrap{overflow-x:auto;margin:16px -6px 0;max-height:60vh;overflow-y:auto}
+  table.ptable{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+  .ptable th{
+    position:sticky;top:0;background:rgba(24,26,33,.97);z-index:2;
+    text-align:right;padding:9px 12px;font-size:10.5px;color:var(--txt3);font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase;cursor:pointer;user-select:none;white-space:nowrap;
+    border-bottom:1px solid var(--stroke);
+  }
+  .ptable th:first-child{text-align:left}
+  .ptable th.on{color:#fff}
+  .ptable td{padding:9px 12px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+  .ptable td:first-child{text-align:left}
+  .ptable tr:hover td{background:rgba(255,255,255,.04);cursor:pointer}
+  .ptable .tk{font-weight:800;font-size:11.5px;letter-spacing:.06em;color:var(--txt2);margin-right:8px}
+  .ptable .nm2{color:var(--txt);font-weight:600}
   .fchips{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 2px}
   .fchip{
     font-size:11px;font-weight:650;padding:5px 11px;border-radius:100px;
@@ -313,7 +330,10 @@
   </header>
 
   <section class="stats" id="stats"></section>
-  <div class="ovlink" id="ovlink" style="display:none">📊 Vue d'ensemble de la liste — secteurs, corrélations, profils de risque</div>
+  <div class="linkrow">
+    <div class="ovlink" id="perflink">📈 Performances récentes — 1 j, 2 j, 3 j, 5 j, 1 mois</div>
+    <div class="ovlink" id="ovlink" style="display:none">📊 Vue d'ensemble — secteurs, corrélations, risques</div>
+  </div>
 
   <div class="controls">
     <div class="seg" id="seg">
@@ -932,6 +952,64 @@ document.addEventListener("visibilitychange", ()=>{
 
 document.getElementById("ovlink").addEventListener("click", openOverview);
 if(ANA) document.getElementById("ovlink").style.display = "block";
+
+/* ─── Performances récentes (1 j / 2 j / 3 j / 5 j / 1 mois) ─── */
+function recentPerfs(t){
+  const q = Q[t];
+  if(!q || !q.recent || q.price==null) return null;
+  const today = new Date().toISOString().slice(0,10);
+  let d = q.recent.dates, c = q.recent.closes;
+  if(d.length && d[d.length-1] === today){ d = d.slice(0,-1); c = c.slice(0,-1); }  // la séance en cours n'est pas une référence
+  // marché pas encore ouvert : le cours actuel EST la dernière clôture → on recule d'une séance
+  if(c.length && q.price === c[c.length-1]){ c = c.slice(0,-1); }
+  const out = {};
+  [["j1",1],["j2",2],["j3",3],["j5",5],["m1",21]].forEach(([k,n])=>{
+    out[k] = c.length >= n ? (q.price / c[c.length-n] - 1) * 100 : null;
+  });
+  return out;
+}
+let perfSort = {key:"j1", dir:-1};
+function openRecentPerf(){
+  const seen = new Set(), rows = [];
+  DATA.picks.filter(p=>!p.archived).forEach(p=>{
+    if(seen.has(p.ticker)) return;
+    seen.add(p.ticker);
+    const r = recentPerfs(p.ticker); if(!r) return;
+    const mine = DATA.picks.filter(x=>x.ticker===p.ticker && !x.archived).sort((a,b)=>b.date.localeCompare(a.date));
+    rows.push({t:p.ticker, name:p.name, sym:(Q[p.ticker].symbol||p.ticker), ...r, reco:perfOf(mine[0]), pickId:mine[0].id});
+  });
+  const k = perfSort.key, dir = perfSort.dir;
+  rows.sort((a,b)=>{ const av=a[k]??-1e9, bv=b[k]??-1e9; return dir<0 ? bv-av : av-bv; });
+  const cols = [["j1","1 j"],["j2","2 j"],["j3","3 j"],["j5","5 j"],["m1","1 mois"],["reco","depuis reco"]];
+  const cell = v => v==null ? `<td>—</td>` : `<td class="${v>=0?'up':'down'}">${fmtPct(v)}</td>`;
+  const avg = key => { const vs = rows.map(r=>r[key]).filter(v=>v!=null); return vs.length ? vs.reduce((a,b)=>a+b,0)/vs.length : null; };
+  const avgTag = key => { const v = avg(key); return `<b class="${(v??0)>=0?'up':'down'}">${fmtPct(v)}</b>`; };
+  sheet.className = "sheet"; sheet.dataset.ticker = ""; sheet.dataset.pickId = "";
+  sheet.innerHTML = `
+    <button class="close" id="mclose">✕</button>
+    <div class="m-head"><div>
+      <div class="tkr" style="color:var(--ap)">PERFORMANCES RÉCENTES</div>
+      <div class="cname">Les recos actives, séance par séance</div>
+      <div class="m-sector">Moyenne des ${rows.length} valeurs : ${avgTag("j1")} sur 1 j · ${avgTag("j5")} sur 5 j · ${avgTag("m1")} sur 1 mois — clique un en-tête pour trier, une ligne pour ouvrir la fiche</div>
+    </div></div>
+    <div class="ptable-wrap"><table class="ptable">
+      <thead><tr><th>Valeur</th>${cols.map(([key,lbl])=>`<th data-k="${key}" class="${key===k?'on':''}">${lbl}${key===k?(dir<0?" ↓":" ↑"):""}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map(r=>`<tr data-pick="${r.pickId}">
+        <td><span class="tk">${r.sym}</span><span class="nm2">${r.name}</span></td>
+        ${cell(r.j1)}${cell(r.j2)}${cell(r.j3)}${cell(r.j5)}${cell(r.m1)}${cell(r.reco)}</tr>`).join("")}</tbody>
+    </table></div>
+    <div class="ana-note">Perf « n j » = cours actuel comparé à la clôture d'il y a n séances de bourse (week-ends et jours fériés exclus). Marché fermé : « 1 j » = la dernière séance jouée. Valeurs actives uniquement.</div>`;
+  overlay.classList.add("show");
+  document.body.style.overflow = "hidden";
+  document.getElementById("mclose").addEventListener("click", closeDetail);
+  sheet.querySelectorAll("th[data-k]").forEach(th=>th.addEventListener("click", ()=>{
+    const key = th.dataset.k;
+    perfSort = {key, dir: perfSort.key===key ? -perfSort.dir : -1};
+    openRecentPerf();
+  }));
+  sheet.querySelectorAll("tr[data-pick]").forEach(tr=>tr.addEventListener("click", ()=>openDetail(+tr.dataset.pick)));
+}
+document.getElementById("perflink").addEventListener("click", openRecentPerf);
 
 /* ─── Init ─── */
 /* 1) réafficher immédiatement les derniers prix connus (si plus frais que les données de fond) */

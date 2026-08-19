@@ -296,6 +296,8 @@ def main():
             "descFr": DESC_FR.get(primary) or DESC_FR.get(used),
             "descEn": (info.get("longBusinessSummary") or "")[:600],
             "history": {"dates": d_ds, "closes": [round(c, 3) for c in c_ds]},
+            # 25 dernières clôtures exactes (perfs 1 j / 2 j / 3 j / 5 j / 1 mois)
+            "recent": {"dates": dates[-25:], "closes": [round(c, 3) for c in closes[-25:]]},
             # série complète (dates ISO) gardée pour retrouver le cours au pick
             "_allDates": dates,
             "_allCloses": closes,
