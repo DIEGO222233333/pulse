@@ -393,7 +393,9 @@ function seriesSince(pick){
   const q = Q[pick.ticker]; if(!q||!q.history) return null;
   const {dates,closes} = q.history;
   const out = {d:[],c:[]};
-  for(let i=0;i<dates.length;i++){ if(dates[i]>=pick.date){ out.d.push(dates[i]); out.c.push(closes[i]); } }
+  for(let i=0;i<dates.length;i++){
+    if(dates[i]>=pick.date && (!pick.exitDate || dates[i]<=pick.exitDate)){ out.d.push(dates[i]); out.c.push(closes[i]); }
+  }
   if(out.c.length<2 && closes.length){ // pick trop récent : garder les derniers points
     const n = Math.min(closes.length, 10);
     out.d = dates.slice(-n); out.c = closes.slice(-n);
@@ -401,9 +403,11 @@ function seriesSince(pick){
   return out.c.length ? out : null;
 }
 const perfOf = p =>{
+  if(p.exitDate) return (p.priceAtExit && p.priceAtPick) ? (p.priceAtExit/p.priceAtPick-1)*100 : null;  // figée à la sortie
   const q = Q[p.ticker];
   return (q && q.price!=null && p.priceAtPick) ? (q.price/p.priceAtPick-1)*100 : null;
 };
+const perfLabel = p => p.exitDate ? " (clôturée)" : " depuis la reco";
 const dayChg = q => (q && q.price!=null && q.prevClose) ? (q.price/q.prevClose-1)*100 : null;
 
 /* ─── Sparkline SVG ─── */
@@ -498,7 +502,7 @@ function renderGrid(){
         </div>
         <div class="perf ${(perf??0)>=0?'up':'down'}">${fmtPct(perf)}</div>
       </div>
-      <div class="since">Reco le ${fmtDate(p.date)} · ${p.priceAtPick?fmtPrice(p.priceAtPick)+" "+curSym(q?.currency)+" au pick":""}${p.archived?" · 🗄 Archivée":""}</div>
+      <div class="since">Reco le ${fmtDate(p.date)} · ${p.priceAtPick?fmtPrice(p.priceAtPick)+" "+curSym(q?.currency)+" au pick":""}${p.exitDate?` · 🏁 Clôturée le ${fmtDate(p.exitDate)}${p.priceAtExit?" à "+fmtPrice(p.priceAtExit)+" "+curSym(q?.currency):""}`:q?.delisted?` · ⛔ Plus cotée depuis le ${fmtDate(q.delisted)}`:p.archived?" · 🗄 Archivée":""}</div>
     </div>`;
   }).join("");
   grid.querySelectorAll(".card").forEach(c=>c.addEventListener("click",()=>openDetail(+c.dataset.id)));
@@ -637,8 +641,8 @@ function openDetail(id){
       <div class="m-day ${day>=0?'up':'down'}">${day!=null?fmtPct(day)+" aujourd'hui":""}</div>
     </div>
     <div class="m-perfline">
-      <div class="perf ${(perf??0)>=0?'up':'down'}">${fmtPct(perf)} depuis la reco</div>
-      <div class="picked">recommandée le ${fmtDate(p.date)} ${p.priceAtPick?"à "+fmtPrice(p.priceAtPick)+" "+curSym(cur):""}</div>
+      <div class="perf ${(perf??0)>=0?'up':'down'}">${fmtPct(perf)}${perfLabel(p)}</div>
+      <div class="picked">recommandée le ${fmtDate(p.date)} ${p.priceAtPick?"à "+fmtPrice(p.priceAtPick)+" "+curSym(cur):""}${p.exitDate?` · clôturée le ${fmtDate(p.exitDate)}${p.priceAtExit?" à "+fmtPrice(p.priceAtExit)+" "+curSym(cur):""}`:""}</div>
     </div>
     ${ch?`<div class="chartbox" id="chartbox">${ch.svg}<div class="tip" id="tip"></div></div>`:`<div class="nodata">Historique indisponible pour ce titre.</div>`}
     <div class="m-stats">
@@ -742,7 +746,7 @@ async function liveTick(){
   if(!key || !liveEnabled() || document.hidden) return;
   if(Date.now()-snapshotAt < 65000) return;   // l'instantané vient de tout recaler : on épargne le quota
   if(!liveOrder.length)
-    liveOrder = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t]);
+    liveOrder = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t] && !Q[t].delisted);
   // quand le flux temps réel tourne, ne sonder que les valeurs qu'il ne couvre pas
   const pool = wsAlive ? liveOrder.filter(t=>!wsSubs.has(FH_MAP[t]||t)) : liveOrder;
   if(!pool.length) return;
@@ -768,8 +772,8 @@ async function liveTick(){
 async function snapshot(){
   const key = fhKey(); if(!key || !liveEnabled()) return;
   snapshotAt = Date.now();
-  const prio = [...new Set(visiblePicks().map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t]);
-  const rest = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!prio.includes(t) && !FH_SKIP.has(t) && Q[t]);
+  const prio = [...new Set(visiblePicks().map(p=>p.ticker))].filter(t=>!FH_SKIP.has(t) && Q[t] && !Q[t].delisted);
+  const rest = [...new Set(DATA.picks.map(p=>p.ticker))].filter(t=>!prio.includes(t) && !FH_SKIP.has(t) && Q[t] && !Q[t].delisted);
   const list = [...prio, ...rest].slice(0, 55);   // ≤55 requêtes : sous la limite de 60/min
   await Promise.all(list.map(async t=>{
     try{
@@ -826,7 +830,7 @@ function patchTicker(t){
     const md = sheet.querySelector(".m-day");
     if(md){ md.className="m-day "+((day??0)>=0?"up":"down"); md.textContent = day!=null?fmtPct(day)+" aujourd'hui":""; }
     const mpf = sheet.querySelector(".m-perfline .perf");
-    if(mpf){ mpf.className="perf "+((perf??0)>=0?"up":"down"); mpf.textContent = fmtPct(perf)+" depuis la reco"; }
+    if(mpf){ mpf.className="perf "+((perf??0)>=0?"up":"down"); mpf.textContent = fmtPct(perf)+perfLabel(p); }
   }
 }
 setInterval(liveTick, 1100);   // ≈55 req/min, sous la limite gratuite de 60
@@ -834,7 +838,7 @@ setInterval(liveTick, 1100);   // ≈55 req/min, sous la limite gratuite de 60
 /* ─── Flux temps réel (WebSocket Finnhub : chaque transaction, à la seconde) ─── */
 function wsSymbols(){
   // les valeurs affichées d'abord, limité à 50 abonnements (plafond du plan gratuit)
-  const vis = visiblePicks().map(p=>p.ticker).filter(t=>!FH_SKIP.has(t) && Q[t]);
+  const vis = visiblePicks().map(p=>p.ticker).filter(t=>!FH_SKIP.has(t) && Q[t] && !Q[t].delisted);
   return [...new Set(vis)].slice(0,50).map(t=>FH_MAP[t]||t);
 }
 function wsResub(){

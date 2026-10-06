@@ -113,11 +113,34 @@ PICKS = [
     (["MSFT"], "Microsoft", "2026-08-06", "VALUE LINE"),
     (["CSCO"], "Cisco Systems", "2026-08-09", "STOCK ADVISOR"),
     (["CNC"], "Centene", "2026-08-09", "ALPHA PICK"),
+    (["EME"], "EMCOR Group", "2026-08-16", "VALUE LINE"),
+    (["EXEL"], "Exelixis", "2026-08-18", "VALUE LINE"),
+    (["AR"], "Antero Resources", "2026-08-20", "VALUE LINE"),
+    (["TKO"], "TKO Group", "2026-08-23", "STOCK ADVISOR"),
+    (["BAC"], "Bank of America", "2026-08-23", "ALPHA PICK"),
+    (["NBIX"], "Neurocrine Biosciences", "2026-08-30", "VALUE LINE"),
+    (["PBF"], "PBF Energy", "2026-09-06", "ALPHA PICK"),
+    (["ASND"], "Ascendis Pharma", "2026-09-06", "STOCK ADVISOR"),
+    (["NVDA"], "Nvidia", "2026-09-13", "VALUE LINE"),
+    (["INTC"], "Intel", "2026-09-20", "ALPHA PICK"),
+    (["HWM"], "Howmet Aerospace", "2026-09-20", "STOCK ADVISOR"),
 ]
+
+# ─── Sorties (colonne SORTIE de l'Excel) : (ticker, date du pick) → date de sortie.
+# Une reco clôturée garde sa perf figée au cours de clôture du jour de sortie.
+EXITS = {
+    ("VISN", "2025-08-15"): "2026-08-21",
+}
+
+# ─── Cours au pick saisis à la main, quand la source n'a plus l'historique
+# (ex. TopBuild, rachetée par QXO et retirée du NYSE le 1er juillet 2026).
+PICK_PRICE_OVERRIDE = {
+    # ("BLD", "2025-02-09"): 000.00,
+}
 
 # ─── Archivage : seuls les 50 tickers US les plus récemment recommandés restent
 # « actifs » (couverture temps réel complète, limite du plan gratuit Finnhub).
-# Les picks plus anciens sont marqués archivés : consultables via l'onglet Archives.
+# Les picks plus anciens et les recos clôturées sont archivés (onglet Archives).
 US_ACTIVE_LIMIT = 50
 NON_US = {"PRY.MI", "ATZ.TO"}
 
@@ -212,6 +235,15 @@ DESC_FR = {
     "MSFT": "Numéro un mondial du logiciel : Windows, Office, cloud Azure et IA (Copilot, partenariat OpenAI).",
     "CSCO": "Leader mondial des équipements réseaux d'entreprise, de la cybersécurité et de la collaboration.",
     "CNC": "Grand assureur santé américain, spécialiste des programmes publics Medicaid et Medicare.",
+    "EME": "Géant américain de l'installation électrique et mécanique (CVC, plomberie) pour data centers, usines et bâtiments.",
+    "EXEL": "Biotech américaine en oncologie : Cabometyx (cancers du rein, du foie, de la thyroïde) et pipeline de thérapies ciblées.",
+    "AR": "Producteur américain de gaz naturel et de liquides de gaz (Appalaches), gros exportateur via le GNL.",
+    "TKO": "Groupe de divertissement sportif réunissant l'UFC et la WWE : droits TV, événements live, sponsoring.",
+    "BAC": "Deuxième banque américaine : banque de détail, gestion de fortune (Merrill) et banque d'investissement.",
+    "PBF": "Un des plus grands raffineurs indépendants américains : 6 raffineries produisant essence, diesel et kérosène.",
+    "ASND": "Biotech danoise spécialisée en endocrinologie (hormone de croissance hebdomadaire Skytrofa, Yorvipath).",
+    "NVDA": "Leader mondial des processeurs graphiques et des puces pour l'intelligence artificielle (GPU, data centers, CUDA).",
+    "INTC": "Géant américain des microprocesseurs (PC, serveurs) en pleine reconversion vers la fonderie de puces pour tiers.",
 }
 
 MAX_POINTS = 160  # points max par courbe (downsampling)
@@ -239,7 +271,20 @@ def fetch_ticker(symbol, earliest):
     return info, hist
 
 
+def load_previous():
+    """Données de la collecte précédente : filet de sécurité pour les valeurs
+    retirées de la cote (rachat, radiation) que Yahoo ne sert plus."""
+    try:
+        txt = OUT.read_text(encoding="utf-8")
+        d = json.loads(txt[txt.index("{"):txt.rindex("}") + 1])
+        pick_px = {(p["ticker"], p["date"]): p.get("priceAtPick") for p in d.get("picks", [])}
+        return d.get("quotes", {}), pick_px
+    except Exception:
+        return {}, {}
+
+
 def main():
+    prev_quotes, prev_pick_px = load_previous()
     # date la plus ancienne par ticker (un ticker peut avoir plusieurs picks)
     earliest = {}
     for cands, _, date, _ in PICKS:
@@ -266,8 +311,18 @@ def main():
                 break
             time.sleep(0.6)
         if not result:
-            print(f"  ✗ {name} ({'/'.join(cands)}) introuvable", file=sys.stderr)
-            failed.append(primary)
+            old = prev_quotes.get(primary)
+            if old and old.get("history", {}).get("dates"):
+                # plus coté : on garde la dernière photo connue, perf figée au dernier cours
+                old = dict(old)
+                old["delisted"] = old.get("delisted") or old["history"]["dates"][-1]
+                old["_allDates"], old["_allCloses"] = [], []
+                old["_fromPrev"] = True
+                quotes[primary] = old
+                print(f"  ⚠ {name} ({primary}) plus coté — dernières données conservées ({old['delisted']})", file=sys.stderr)
+            else:
+                print(f"  ✗ {name} ({'/'.join(cands)}) introuvable", file=sys.stderr)
+                failed.append(primary)
             continue
         info, hist = result
         resolved[primary] = used
@@ -308,6 +363,10 @@ def main():
     # tickers actifs = les 50 US les plus récemment recommandés (+ hors-US)
     latest = {}
     for cands, _, date, _ in PICKS:
+        if (cands[0], date) in EXITS:   # une reco clôturée ne garde pas un ticker actif
+            continue
+        if quotes.get(cands[0], {}).get("delisted"):   # ni une valeur retirée de la cote
+            continue
         latest[cands[0]] = max(latest.get(cands[0], date), date)
     us_sorted = sorted([t for t in latest if t not in NON_US], key=lambda t: latest[t], reverse=True)
     active = set(us_sorted[:US_ACTIVE_LIMIT]) | NON_US
@@ -316,12 +375,30 @@ def main():
     for i, (cands, name, date, portfolio) in enumerate(PICKS):
         primary = cands[0]
         q = quotes.get(primary)
-        price_at_pick = None
+        exit_date = EXITS.get((primary, date))
+        price_at_pick, price_at_exit = None, None
+        if q and q.get("_fromPrev"):
+            price_at_pick = prev_pick_px.get((primary, date))
+            first = (q.get("history", {}).get("dates") or [None])[0]
+            if first and first > (dt.date.fromisoformat(date) + dt.timedelta(days=10)).isoformat():
+                price_at_pick = None   # l'historique conservé ne remonte pas jusqu'au pick
         if q:
             for d, c in zip(q["_allDates"], q["_allCloses"]):
                 if d >= date:
                     price_at_pick = c
                     break
+            if exit_date:
+                for d, c in zip(q["_allDates"], q["_allCloses"]):
+                    if d <= exit_date:
+                        price_at_exit = c
+                    else:
+                        break
+            # garde-fou : si la source ne remonte pas jusqu'au pick, le « cours au pick »
+            # serait faux → inconnu plutôt qu'inventé
+            if q["_allDates"] and q["_allDates"][0] > (dt.date.fromisoformat(date) + dt.timedelta(days=10)).isoformat():
+                price_at_pick = None
+        if (primary, date) in PICK_PRICE_OVERRIDE:
+            price_at_pick = PICK_PRICE_OVERRIDE[(primary, date)]
         picks_out.append({
             "id": i,
             "ticker": primary,
@@ -329,10 +406,13 @@ def main():
             "date": date,
             "portfolio": portfolio,
             "priceAtPick": price_at_pick,
-            "archived": primary not in active,
+            "exitDate": exit_date,
+            "priceAtExit": price_at_exit,
+            "archived": bool(exit_date) or primary not in active or bool(q and q.get("delisted")),
         })
 
     for q in quotes.values():
+        q.pop("_fromPrev", None)
         q.pop("_allDates", None)
         q.pop("_allCloses", None)
 

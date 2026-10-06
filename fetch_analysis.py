@@ -32,12 +32,12 @@ for cands, name, date, pf in PICKS:
 # blocs thématiques (appartenance factuelle par activité ; la corrélation
 # moyenne intra-bloc est ensuite CALCULÉE sur les cours, pas décrétée)
 BLOCKS = {
-    "Infrastructure IA / data centers": ["CLS","VRT","ANET","CRDO","FN","LITE","MU","STRL","POWL","ETN","FIX","APH","GLW","TTMI","ICHR","Q","SNDK","MXL","DY","CSCO","APP","DDOG","MSFT","META","AMZN","IOT","U","TTAN","VEEV","TOST","DOCS","KLAR","W","MELI","CPNG"],
+    "Infrastructure IA / data centers": ["CLS","VRT","ANET","CRDO","FN","LITE","MU","STRL","POWL","ETN","FIX","APH","GLW","TTMI","ICHR","Q","SNDK","MXL","DY","CSCO","APP","DDOG","MSFT","META","AMZN","IOT","U","TTAN","VEEV","TOST","DOCS","KLAR","W","MELI","CPNG","NVDA","INTC","EME"],
     "Or, argent et métaux": ["B","NEM","KGC","SSRM","CDE","RGLD","NEXA","CSTM"],
-    "Conso / restauration / voyage": ["EAT","TXRH","SBUX","BROS","CCL","ONON","NKE","CASY","SYY","UNFI","ATZ.TO","RACE","GM","BLBD"],
-    "Santé": ["CNC","AZN","NBIX","KRYS","GEHC","OPCH","BTSG","INCY","ATGE"],
-    "Finance / assurance": ["MS","SYF","ALL","MFC","CME","SNEX","BRK-B"],
-    "Industrie / défense / énergie": ["HWM","MOG-A","HII","EMBJ","RKLB","AGX","BLD","STN","PRY.MI","TIGO","VISN","PARR","FPS","EZPW"],
+    "Conso / restauration / voyage": ["EAT","TXRH","SBUX","BROS","CCL","ONON","NKE","CASY","SYY","UNFI","ATZ.TO","RACE","GM","BLBD","TKO"],
+    "Santé": ["CNC","AZN","NBIX","KRYS","GEHC","OPCH","BTSG","INCY","ATGE","EXEL","ASND"],
+    "Finance / assurance": ["MS","SYF","ALL","MFC","CME","SNEX","BRK-B","BAC"],
+    "Industrie / défense / énergie": ["HWM","MOG-A","HII","EMBJ","RKLB","AGX","BLD","STN","PRY.MI","TIGO","VISN","PARR","FPS","EZPW","AR","PBF"],
 }
 
 def pct(a, b):
