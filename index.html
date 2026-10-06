@@ -724,12 +724,39 @@ function fhKey(){
   return localStorage.getItem("finnhubKey") || window.FINNHUB_KEY || "";
 }
 function liveEnabled(){ return !localStorage.getItem("liveOff"); }
-function renderUpdated(){
-  const label = wsAlive ? "Temps réel" : (liveOk ? "Live" : "");
-  document.getElementById("updated").innerHTML =
-    (fhKey() && label ? `<span class="live-dot"></span><b>${label}</b> · ` : ``) +
-    `Données Yahoo Finance<br>maj <b>${DATA.generatedAt}</b>`;
+/* état de Wall Street (9h30–16h00 heure de New York, lun–ven ; jours fériés non gérés) */
+function marketStatus(){
+  const now = new Date();
+  const ny = new Date(now.toLocaleString("en-US", {timeZone:"America/New_York"}));
+  const offset = now - ny;                                  // décalage local ↔ New York
+  const mins = ny.getHours()*60 + ny.getMinutes(), wd = ny.getDay();
+  const isWeekday = wd >= 1 && wd <= 5;
+  if(isWeekday && mins >= 570 && mins < 960) return {open:true};
+  const next = new Date(ny);
+  next.setHours(9, 30, 0, 0);
+  if(!isWeekday || mins >= 570) next.setDate(next.getDate()+1);
+  while(next.getDay()===0 || next.getDay()===6) next.setDate(next.getDate()+1);
+  const local = new Date(next.getTime() + offset);
+  const sameDay = local.toDateString() === now.toDateString();
+  const hm = local.toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"});
+  const day = sameDay ? "aujourd'hui" : local.toLocaleDateString("fr-FR", {weekday:"long"});
+  return {open:false, label:`réouverture ${day} à ${hm}`};
 }
+function renderUpdated(){
+  const m = marketStatus();
+  let head;
+  if(!m.open)
+    head = `<span class="live-dot" style="background:var(--txt3);animation:none"></span><b>Marché fermé</b> · ${m.label}`;
+  else if(!fhKey() || !liveEnabled())
+    head = `<b>Live inactif</b> · ⚙︎ pour l'activer`;
+  else if(wsAlive || liveOk)
+    head = `<span class="live-dot"></span><b>${wsAlive ? "Temps réel" : "Live"}</b>`;
+  else
+    head = `Connexion au flux…`;
+  document.getElementById("updated").innerHTML =
+    `${head}<br>Données Yahoo Finance · maj <b>${DATA.generatedAt}</b>`;
+}
+setInterval(renderUpdated, 60000);
 
 function updHist(q, price){   // reporte le prix du jour sur la courbe
   const today = new Date().toISOString().slice(0,10);
